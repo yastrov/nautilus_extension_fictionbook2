@@ -7,6 +7,8 @@
 #include <libxml/xpathInternals.h>
 
 #include <zip.h>
+#include <stdint.h> /* For numeric (size_t) limits. */
+#include <string.h>
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -457,6 +459,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
     zip_int64_t num64; /* Number of files */
     zip_uint64_t i;    /* Counter, for 0..num64 */
     zip_uint64_t uncomp_size; /* Zize of uncompressed file */
+    zip_int64_t fread_len; /* Really read bytes from zipped file. */
     int len;
     if ((za = zip_open(archive, 0, &err)) == NULL) {
         zip_error_to_str(errbuf, sizeof(errbuf), err, errno);
@@ -472,22 +475,28 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                 //safe_create_dir(sb.name);
                 ;
             } else {
-                if(g_strcmp0(&sb.name[len-4], ".fb2") == 0) {
+                if(len > 4 && g_strcmp0(&sb.name[len-4], ".fb2") == 0) {
                     zf = zip_fopen_index(za, i, 0);
                     if(!zf) {
                         zip_close(za);
                         return(3);
                     }
-                    dataEntry = (char *)g_malloc0((size_t)uncomp_size);
+                    /* Cast to size_t conversion safe (for malloc).*/
+                    if(SIZE_MAX < uncomp_size+1) {
+                        zip_close(za);
+                        return(3);
+                    }
+                    /* Conversion from zip_uint64_t to size_t is bad, but no way.*/
+                    dataEntry = (char *)g_malloc0((size_t)uncomp_size+1);
                     if(dataEntry != NULL) {
-                        zip_int64_t fread_len = zip_fread(zf, dataEntry, (size_t)uncomp_size);
-                        if(len < 0) {
+                        fread_len = zip_fread(zf, dataEntry, uncomp_size);
+                        if(fread_len < 0) {
                             zip_fclose(zf);
                             free(dataEntry);
                             zip_close(za);
                             return(4);
                         }
-                        if(fread_len < sb.size) {
+                        if((zip_uint64_t)fread_len < uncomp_size) {
                             zip_fclose(zf);
                             free(dataEntry);
                             zip_close(za);
