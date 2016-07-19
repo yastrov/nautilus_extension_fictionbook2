@@ -44,17 +44,54 @@ static NautilusOperationResult fb2_extension_update_file_info (
                                 NautilusFileInfo *file,
                                 GClosure *update_complete,
                                 NautilusOperationHandle **handle);
-/* Start FB2 only */                 
+/* Start FB2 only */
+ enum FSM_State {
+    INIT,
+    BOOK_TITLE_OPENED,
+    BOOK_TITLE_END,
+    AUTHOR_OPENED,
+    AUTHOR_END,
+    AUTHOR_FIRSTNAME_OPENED,
+    AUTHOR_FIRSTNAME_END,
+    AUTHOR_LASTNAME_OPENED,
+    AUTHOR_LASTNAME_END,
+    GET_AUTH_INFO_COMPLETE,
+    STOP
+};
+           
 typedef struct {
-    xmlChar *title;
-    xmlChar *first_name;
-    xmlChar *last_name;
+    char title[240];
+    char first_name[50];
+    char last_name[20];
+    enum FSM_State my_state;
 } FB2Info;
         
 static int read_from_plain_fb2(const char* filename, FB2Info *info);
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
 static int parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info);
-static int process_xml(xmlDocPtr doc, FB2Info *info);
+
+void make_sax_handler(xmlSAXHandler *SAXHander, void *user_data);
+static void OnStartElementNs(
+    void *ctx,
+    const xmlChar *localname,
+    const xmlChar *prefix,
+    const xmlChar *URI,
+    int nb_namespaces,
+    const xmlChar **namespaces,
+    int nb_attributes,
+    int nb_defaulted,
+    const xmlChar **attributes
+    );
+
+static void OnEndElementNs(
+    void* ctx,
+    const xmlChar* localname,
+    const xmlChar* prefix,
+    const xmlChar* URI
+    );
+static void characters(void * ctx,
+	const xmlChar * ch,
+	int len)
 
 const static char nonFb2[] = "Non FB2 file.";
 const static char *fb2_errors[] = {"ok", "Invalid FB2 file.", "can't open zip archive",
@@ -275,46 +312,45 @@ void nautilus_module_list_types (const GType **types, int *num_types)
 gint
 timeout_plain_fb2_callback(gpointer data)
 {
-    FB2Info info;
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
+        FB2Info info;
+        xmlSAXHandler my_sax_handler;
+        make_sax_handler(&my_sax_handler, &info);
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
-        int result = read_from_plain_fb2(filename, &info);
-        if(result == 0) {
+        const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
+        if(result >= 0) {
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
-                                                     (char*)info.title );
+                                                     info.title );
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_title",
-                                                    (char*)info.title);
+                                                     info.title);
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_lastname",
-                                                    (char*)info.last_name);
+                                                    info.last_name);
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_firstname",
-                                                    (char*)info.first_name);
+                                                    info.first_name);
         
             /* Cache the data so that we don't have to read it again */
             g_object_set_data_full(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_data",
-                                    g_strdup((char*)info.title),
+                                    g_strdup(info.title),
                                     g_free);
             g_object_set_data_full(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_title",
-                                    g_strdup((char*)info.title),
+                                    g_strdup(info.title),
                                     g_free);
             g_object_set_data_full(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_lastname",
-                                    g_strdup((char*)info.last_name),
+                                    g_strdup(info.last_name),
                                     g_free);
             g_object_set_data_full(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_firstname",
-                                    g_strdup((char*)info.first_name),
+                                    g_strdup(info.first_name),
                                     g_free);
-            
-            if(info.title != NULL) xmlFree(info.title);
-            if(info.first_name != NULL) xmlFree(info.first_name);
-            if(info.last_name != NULL) xmlFree(info.last_name);
+            xmlCleanupParser();
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -350,46 +386,43 @@ timeout_plain_fb2_callback(gpointer data)
 gint
 timeout_zip_fb2_callback(gpointer data)
 {
-    FB2Info info;
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
+        FB2Info info;
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
         int result = read_from_zip_fb2(filename, &info);
         if(result == 0) {
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
-                                                     (char*)info.title );
+                                                     info.title );
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_title",
-                                                    (char*)info.title);
+                                                     info.title);
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_lastname",
-                                                    (char*)info.last_name);
+                                                     info.last_name);
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_firstname",
-                                                    (char*)info.first_name);
+                                                     info.first_name);
         
             /* Cache the data so that we don't have to read it again */
             g_object_set_data_full(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_data",
-                                            g_strdup((char*)info.title),
+                                            g_strdup(info.title),
                                             g_free);
             g_object_set_data_full(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_title",
-                                            g_strdup((char*)info.title),
+                                            g_strdup(info.title),
                                             g_free);
             g_object_set_data_full(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_lastname",
-                                            g_strdup((char*)info.last_name),
+                                            g_strdup(info.last_name),
                                             g_free);
             g_object_set_data_full(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_firstname",
-                                            g_strdup((char*)info.first_name),
+                                            g_strdup(info.first_name),
                                             g_free);
-            
-            if(info.title != NULL) xmlFree(info.title);
-            if(info.first_name != NULL) xmlFree(info.first_name);
-            if(info.last_name != NULL) xmlFree(info.last_name);
+            xmlCleanupParser();
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -422,26 +455,6 @@ timeout_zip_fb2_callback(gpointer data)
     return 0;
 }
 /* Fb2 */
-static int 
-read_from_plain_fb2(const char* filename, FB2Info *info)
-{
-    xmlDocPtr doc;
-
-    assert(filename);
-
-    /* Load XML document */
-    doc = xmlParseFile(filename);
-    if (doc == NULL) {
-        return(1);
-    }
-
-    int result = process_xml(doc, info);
-
-    /* free the document */
-    xmlFreeDoc(doc); 
-    
-    return(result);
-}
 
 static int
 read_from_zip_fb2(const char *archive, FB2Info *info)
@@ -520,72 +533,101 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
 static int
 parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
 {
-    xmlDocPtr doc;
-    assert(content);
-    
-    doc = xmlReadMemory(content, (size_t)uncomp_size, "fb2.xml", NULL,
-            XML_PARSE_NOERROR | XML_PARSE_NOWARNING | XML_PARSE_RECOVER);
-    if (doc == NULL) {
-        return(6);
+    xmlSAXHandler my_sax_handler;
+    make_sax_handler(&my_sax_handler, info);
+    int my_size;
+    if(INT32_MAX < uncomp_size+1) {
+        my_size = INT32_MAX -1;
     }
-
-    const int result = process_xml(doc, info);
-
-    /* free the document */
-    xmlFreeDoc(doc);
+    else
+        my_size = (int)uncomp_size;   
+    const int result = xmlSAXUserParseMemory(&my_sax_handler, NULL, content, my_size);
     return(result);
 }
 
-static int
-process_xml(xmlDocPtr doc, FB2Info *info)
+void make_sax_handler(xmlSAXHandler *SAXHander,
+    void *user_data)
 {
-    xmlXPathContextPtr xpathCtx; 
-    xmlXPathObjectPtr xpathObj;
-    xmlXPathObjectPtr xpathObjTitle, xpathObjAuthor, xpathObjAuthorFirtsName, xpathObjAuthorLastName; 
+    SAXHander->initialized = XML_SAX2_MAGIC;
+    SAXHander->startElementNs = OnStartElementNs;
+    SAXHander->endElementNs = OnEndElementNs;
+    SAXHander->characters = OnCharacters;
+    SAXHander->_private = user_data;
+}
 
-    /* Create xpath evaluation context */
-    xpathCtx = xmlXPathNewContext(doc);
-    if(xpathCtx == NULL) {
-        return(7);
+static void
+OnCharacters(void * ctx,
+    const xmlChar * ch,
+    int len)
+{
+    xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
+    FB2Info *info = (FB2Info *)(handler->_private);
+    switch (info->my_state) {
+    case AUTHOR_FIRSTNAME_OPENED:
+        strncpy(info->first_name, (const char *)ch, len);
+        info->my_state = AUTHOR_FIRSTNAME_END;
+        break;
+    case AUTHOR_LASTNAME_OPENED:
+        strncpy(info->last_name, (const char *)ch, len);
+        info->my_state = AUTHOR_LASTNAME_END;
+        break;
+    case BOOK_TITLE_OPENED:
+        strncpy(info->title, (const char *)ch, len);
+        info->my_state = BOOK_TITLE_END;
+        break;
+    default:
+        break;
     }
-    
-    xmlXPathRegisterNs(xpathCtx , BAD_CAST "fb2", BAD_CAST "http://www.gribuser.ru/xml/fictionbook/2.0");
-    //xpathObj = xmlXPathEval((xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info/fb2:book-title", xpathCtx);
-    xpathObj = xmlXPathEval((xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info", xpathCtx);
-    if (xpathObj->type == XPATH_NODESET) {
-        xmlNodePtr node = xpathCtx->node;
-        xpathCtx->node = xpathObj->nodesetval->nodeTab[0];
-        
-        /*Request Title*/
-        xpathObjTitle = xmlXPathEval((xmlChar*)"fb2:book-title", xpathCtx);
-        if (xpathObjTitle->type == XPATH_NODESET) {
-            info->title = xmlXPathCastNodeSetToString(xpathObjTitle->nodesetval);
-        }
-        xmlXPathFreeObject(xpathObjTitle);
-        /* Request Author */
-        xpathObjAuthor = xmlXPathEval((xmlChar*)"fb2:author", xpathCtx);
-        if (xpathObjAuthor->type == XPATH_NODESET) {
-            /* Set fb2:author node for future context */
-            xpathCtx->node = xpathObjAuthor->nodesetval->nodeTab[0];
-            /* Request first-name */
-            xpathObjAuthorFirtsName = xmlXPathEval((xmlChar*)"fb2:first-name", xpathCtx);
-            if (xpathObjAuthorFirtsName->type == XPATH_NODESET) {
-                info->first_name = xmlXPathCastNodeSetToString(xpathObjAuthorFirtsName->nodesetval);
-            }
-            xmlXPathFreeObject(xpathObjAuthorFirtsName);
-            /* Request last-name */
-            xpathObjAuthorLastName = xmlXPathEval((xmlChar*)"fb2:last-name", xpathCtx);
-            if (xpathObjAuthorLastName->type == XPATH_NODESET) {
-                info->last_name = xmlXPathCastNodeSetToString(xpathObjAuthorLastName->nodesetval);
-            }
-            xmlXPathFreeObject(xpathObjAuthorLastName); 
-        }
-        xmlXPathFreeObject(xpathObjAuthor);
-        /* Recover context */
-        xpathCtx->node = node;
+}
+
+static void
+OnStartElementNs(
+    void *ctx,
+    const xmlChar *localname,
+    const xmlChar *prefix,
+    const xmlChar *URI,
+    int nb_namespaces,
+    const xmlChar **namespaces,
+    int nb_attributes,
+    int nb_defaulted,
+    const xmlChar **attributes
+    )
+{
+    xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
+    FB2Info *info = (FB2Info *)(handler->_private);
+    info->my_state = INIT;
+    if (g_strcmp0((const char*)localname, "author") == 0) {
+        info->my_state = AUTHOR_OPENED;
+        return;
     }
-    /* Cleanup of XPath data */
-    xmlXPathFreeObject(xpathObj);
-    xmlXPathFreeContext(xpathCtx); 
-    return (0);
+    if (g_strcmp0((const char*)localname, "first-name") == 0) {
+        info->my_state = AUTHOR_FIRSTNAME_OPENED;
+        return;
+    }
+    if (g_strcmp0((const char*)localname, "last-name") == 0) {
+        info->my_state = AUTHOR_LASTNAME_OPENED;
+        return;
+    }
+    if (g_strcmp0((const char*)localname, "book-title") == 0) {
+        info->my_state = BOOK_TITLE_OPENED;
+        return;
+    }
+}
+
+static void
+OnEndElementNs(
+    void* ctx,
+    const xmlChar* localname,
+    const xmlChar* prefix,
+    const xmlChar* URI
+    )
+{
+    xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
+    FB2Info *info = (FB2Info *)(handler->_private);
+    if (info->my_state == BOOK_TITLE_END) {
+        xmlStopParser(ctx);
+        return;
+    }
+    if (g_strcmp0(localname, "title-info") == 0)
+        xmlStopParser(ctx);
 }
