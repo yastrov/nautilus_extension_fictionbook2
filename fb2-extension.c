@@ -1,15 +1,14 @@
 #include <assert.h>
 #include <errno.h>
 
-#include <libxml/tree.h>
 #include <libxml/parser.h>
-#include <libxml/xpath.h>
-#include <libxml/xpathInternals.h>
 
 #include <zip.h>
 #include <stdint.h> /* For numeric (size_t) limits. */
 #include <string.h>
-
+#ifdef DEBUG
+#include <stdio.h>
+#endif
 #include <glib.h>
 #include <gio/gio.h>
 #include <libnautilus-extension/nautilus-column-provider.h>
@@ -66,11 +65,10 @@ typedef struct {
     enum FSM_State my_state;
 } FB2Info;
         
-static int read_from_plain_fb2(const char* filename, FB2Info *info);
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
 static int parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info);
 
-void make_sax_handler(xmlSAXHandler *SAXHander, void *user_data);
+static void make_sax_handler(xmlSAXHandler *SAXHander, void *user_data);
 static void OnStartElementNs(
     void *ctx,
     const xmlChar *localname,
@@ -89,9 +87,9 @@ static void OnEndElementNs(
     const xmlChar* prefix,
     const xmlChar* URI
     );
-static void characters(void * ctx,
+static void OnCharacters(void * ctx,
 	const xmlChar * ch,
-	int len)
+	int len);
 
 const static char nonFb2[] = "Non FB2 file.";
 const static char *fb2_errors[] = {"ok", "Invalid FB2 file.", "can't open zip archive",
@@ -312,13 +310,26 @@ void nautilus_module_list_types (const GType **types, int *num_types)
 gint
 timeout_plain_fb2_callback(gpointer data)
 {
+	#ifdef DEBUG
+    fprintf(stderr, "Could not read config file\n");
+    #endif
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
         FB2Info info;
         xmlSAXHandler my_sax_handler;
+        #ifdef DEBUG
+        fprintf(stderr, "SAX handler create next!\n");
+        #endif
         make_sax_handler(&my_sax_handler, &info);
+        #ifdef DEBUG
+        fprintf(stderr, "SAX handler created!\n");
+        #endif
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
+        fprintf(stderr, "Start parsing!\n");
         const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
+        #ifdef DEBUG
+        fprintf(stderr, "End parsing!\n");
+        #endif
         if(result >= 0) {
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
@@ -390,7 +401,7 @@ timeout_zip_fb2_callback(gpointer data)
     if (!handle->cancelled) {
         FB2Info info;
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
-        int result = read_from_zip_fb2(filename, &info);
+        const int result = read_from_zip_fb2(filename, &info);
         if(result == 0) {
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
@@ -545,7 +556,7 @@ parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
     return(result);
 }
 
-void make_sax_handler(xmlSAXHandler *SAXHander,
+static void make_sax_handler(xmlSAXHandler *SAXHander,
     void *user_data)
 {
     SAXHander->initialized = XML_SAX2_MAGIC;
@@ -560,6 +571,9 @@ OnCharacters(void * ctx,
     const xmlChar * ch,
     int len)
 {
+	#ifdef DEBUG
+	fprintf(stderr, "Event: OnCharacters!\n");
+	#endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
     switch (info->my_state) {
@@ -593,6 +607,9 @@ OnStartElementNs(
     const xmlChar **attributes
     )
 {
+	#ifdef DEBUG
+	fprintf (stderr, "Event: OnStartElementNs!\n");
+	#endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
     info->my_state = INIT;
@@ -622,12 +639,15 @@ OnEndElementNs(
     const xmlChar* URI
     )
 {
+	#ifdef DEBUG
+	fprintf (stderr, "Event: OnEndElementNs!\n");
+	#endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
     if (info->my_state == BOOK_TITLE_END) {
         xmlStopParser(ctx);
         return;
     }
-    if (g_strcmp0(localname, "title-info") == 0)
+    if (g_strcmp0((const char*)localname, "title-info") == 0)
         xmlStopParser(ctx);
 }
