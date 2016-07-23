@@ -6,6 +6,8 @@
 #include <zip.h>
 #include <stdint.h> /* For numeric (size_t) limits. */
 #include <string.h>
+#define DEBUG
+#define MALLOC_VER
 #ifdef DEBUG
 #include <stdio.h>
 #endif
@@ -57,13 +59,21 @@ static NautilusOperationResult fb2_extension_update_file_info (
     GET_AUTH_INFO_COMPLETE,
     STOP
 };
-           
+
+#define TITLE_LENGTH 240
+#define FIRST_NAME_LENGTH 50
+#define LAST_NAME_LENGTH 20
 typedef struct {
-    char title[240];
-    char first_name[50];
-    char last_name[20];
+    char title[TITLE_LENGTH];
+    char first_name[FIRST_NAME_LENGTH];
+    char last_name[LAST_NAME_LENGTH];
     enum FSM_State my_state;
 } FB2Info;
+
+#ifndef MALLOC_VER
+FB2Info info;
+xmlSAXHandler my_sax_handler;
+#endif
         
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
 static int parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info);
@@ -315,22 +325,35 @@ timeout_plain_fb2_callback(gpointer data)
     #endif
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
-        FB2Info info;
-        xmlSAXHandler my_sax_handler;
         #ifdef DEBUG
         fprintf(stderr, "SAX handler create next!\n");
         #endif
-        make_sax_handler(&my_sax_handler, &info);
-        #ifdef DEBUG
+         #ifdef DEBUG
         fprintf(stderr, "SAX handler created!\n");
         #endif
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
         fprintf(stderr, "Start parsing!\n");
-        const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
+        
+        #ifdef MALLOC_VER
+        FB2Info info;
+	    xmlSAXHandler *my_sax_handler = (xmlSAXHandler *)g_malloc0(sizeof(xmlSAXHandler));
+	    FB2Info *infoM = (FB2Info *)g_malloc0(sizeof(FB2Info));
+	    make_sax_handler(my_sax_handler, infoM);
+	    const int result = xmlSAXUserParseFile(my_sax_handler, NULL, filename);
+	    #else
+	    make_sax_handler(&my_sax_handler, info);
+	    const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
+	    #endif
+
         #ifdef DEBUG
         fprintf(stderr, "End parsing!\n");
         #endif
         if(result >= 0) {
+			#ifdef MALLOC_VER
+			g_strlcpy(info.title, infoM->title, TITLE_LENGTH);
+			g_strlcpy(info.last_name, infoM->last_name, LAST_NAME_LENGTH);
+			g_strlcpy(info.first_name, infoM->first_name, FIRST_NAME_LENGTH);
+			#endif
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
                                                      info.title );
@@ -362,6 +385,10 @@ timeout_plain_fb2_callback(gpointer data)
                                     g_strdup(info.first_name),
                                     g_free);
             xmlCleanupParser();
+            #ifdef MALLOC_VER
+		    g_free(my_sax_handler);
+		    g_free(infoM);
+		    #endif
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -399,10 +426,20 @@ timeout_zip_fb2_callback(gpointer data)
 {
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
-        FB2Info info;
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
-        const int result = read_from_zip_fb2(filename, &info);
+        #ifdef MALLOC_VER
+        FB2Info info;
+		FB2Info *infoM = (FB2Info *)g_malloc0(sizeof(FB2Info));
+		const int result = read_from_zip_fb2(filename, infoM);
+	    #else
+		const int result = read_from_zip_fb2(filename, &info);
+		#endif
         if(result == 0) {
+			#ifdef MALLOC_VER
+			g_strlcpy(info.title, infoM->title, TITLE_LENGTH);
+			g_strlcpy(info.last_name, infoM->last_name, LAST_NAME_LENGTH);
+			g_strlcpy(info.first_name, infoM->first_name, FIRST_NAME_LENGTH);
+			#endif
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
                                                      info.title );
@@ -434,6 +471,9 @@ timeout_zip_fb2_callback(gpointer data)
                                             g_strdup(info.first_name),
                                             g_free);
             xmlCleanupParser();
+            #ifdef MALLOC_VER
+		    g_free(infoM);
+		    #endif
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -544,15 +584,22 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
 static int
 parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
 {
-    xmlSAXHandler my_sax_handler;
-    make_sax_handler(&my_sax_handler, info);
     int my_size;
     if(INT32_MAX < uncomp_size+1) {
         my_size = INT32_MAX -1;
     }
-    else
+    else {
         my_size = (int)uncomp_size;   
+    }
+    #ifdef MALLOC_VER
+    xmlSAXHandler *my_sax_handler = (xmlSAXHandler *)g_malloc0(sizeof(xmlSAXHandler));
+    make_sax_handler(my_sax_handler, info);
+    const int result = xmlSAXUserParseMemory(my_sax_handler, NULL, content, my_size);
+    g_free(my_sax_handler);
+    #else
+    make_sax_handler(&my_sax_handler, info);
     const int result = xmlSAXUserParseMemory(&my_sax_handler, NULL, content, my_size);
+    #endif
     return(result);
 }
 
