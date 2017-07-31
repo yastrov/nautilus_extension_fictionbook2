@@ -6,8 +6,6 @@
 #include <zip.h>
 #include <stdint.h> /* For numeric (size_t) limits. */
 #include <string.h>
-#define DEBUG
-#define MALLOC_VER
 #ifdef DEBUG
 #include <stdio.h>
 #endif
@@ -45,6 +43,9 @@ static NautilusOperationResult fb2_extension_update_file_info (
                                 NautilusFileInfo *file,
                                 GClosure *update_complete,
                                 NautilusOperationHandle **handle);
+
+static void fb2_extension_cancel_update(NautilusInfoProvider *provider,
+                                        NautilusOperationHandle *handle);
 /* Start FB2 only */
  enum FSM_State {
     INIT,
@@ -69,11 +70,6 @@ typedef struct {
     char last_name[LAST_NAME_LENGTH];
     enum FSM_State my_state;
 } FB2Info;
-
-#ifndef MALLOC_VER
-FB2Info info;
-xmlSAXHandler my_sax_handler;
-#endif
         
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
 static int parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info);
@@ -121,6 +117,7 @@ fb2_extension_column_provider_iface_init (NautilusColumnProviderIface *iface) {
 static void
 fb2_extension_info_provider_iface_init (NautilusInfoProviderIface *iface) {
     iface->update_file_info = fb2_extension_update_file_info;
+    iface->cancel_update = fb2_extension_cancel_update;
     return;
 }
 
@@ -190,32 +187,38 @@ static GList *fb2_extension_get_columns(NautilusColumnProvider *provider)
 {
     NautilusColumn *column;
     GList *ret = NULL;
-    GList *_ret = NULL;
     column = nautilus_column_new ("FB2Extension::fb2_data_column",
                                   "FB2Extension::fb2_data",
                                   "FB2 Information",
                                   "FictionBook2 Information");
     ret = g_list_append(ret, column);
-    _ret = ret;
     column = nautilus_column_new ("FB2Extension::fb2_lastname_column",
                                   "FB2Extension::fb2_lastname",
                                   "FB2 Lastname",
                                   "FictionBook2 Author Lastname");
-    _ret = g_list_append(_ret, column);
+    ret = g_list_append(ret, column);
     column = nautilus_column_new ("FB2Extension::fb2_firsttname_column",
                                   "FB2Extension::fb2_firstname",
                                   "FB2 Firsttname",
                                   "FictionBook2 Author Firstname");
-    _ret = g_list_append(_ret, column);
+    ret = g_list_append(ret, column);
     column = nautilus_column_new ("FB2Extension::fb2_title_column",
                                   "FB2Extension::fb2_title",
                                   "FB2 Title",
                                   "FictionBook2 Title");
-    _ret = g_list_append(_ret, column);
+    ret = g_list_append(ret, column);
     return ret;
 }
 
 /* Info interfaces */
+static void
+fb2_extension_cancel_update(NautilusInfoProvider *provider,
+                             NautilusOperationHandle *handle)
+{
+    UpdateHandle *update_handle = (UpdateHandle*)handle;
+    update_handle->cancelled = TRUE;
+}
+
 static NautilusOperationResult
 fb2_extension_update_file_info (NautilusInfoProvider *provider,
                 NautilusFileInfo *file,
@@ -328,32 +331,14 @@ timeout_plain_fb2_callback(gpointer data)
         #ifdef DEBUG
         fprintf(stderr, "SAX handler create next!\n");
         #endif
-         #ifdef DEBUG
-        fprintf(stderr, "SAX handler created!\n");
-        #endif
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
-        fprintf(stderr, "Start parsing!\n");
         
-        #ifdef MALLOC_VER
         FB2Info info;
-	    xmlSAXHandler *my_sax_handler = (xmlSAXHandler *)g_malloc0(sizeof(xmlSAXHandler));
-	    FB2Info *infoM = (FB2Info *)g_malloc0(sizeof(FB2Info));
-	    make_sax_handler(my_sax_handler, infoM);
-	    const int result = xmlSAXUserParseFile(my_sax_handler, NULL, filename);
-	    #else
-	    make_sax_handler(&my_sax_handler, info);
+        xmlSAXHandler my_sax_handler;
+	    make_sax_handler(&my_sax_handler, &info);
 	    const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
-	    #endif
 
-        #ifdef DEBUG
-        fprintf(stderr, "End parsing!\n");
-        #endif
         if(result >= 0) {
-			#ifdef MALLOC_VER
-			g_strlcpy(info.title, infoM->title, TITLE_LENGTH);
-			g_strlcpy(info.last_name, infoM->last_name, LAST_NAME_LENGTH);
-			g_strlcpy(info.first_name, infoM->first_name, FIRST_NAME_LENGTH);
-			#endif
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
                                                      info.title );
@@ -368,27 +353,18 @@ timeout_plain_fb2_callback(gpointer data)
                                                     info.first_name);
         
             /* Cache the data so that we don't have to read it again */
-            g_object_set_data_full(G_OBJECT (handle->file), 
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_data",
-                                    g_strdup(info.title),
-                                    g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                    info.title);
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_title",
-                                    g_strdup(info.title),
-                                    g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                    info.title);
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_lastname",
-                                    g_strdup(info.last_name),
-                                    g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                    info.last_name);
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_firstname",
-                                    g_strdup(info.first_name),
-                                    g_free);
-            xmlCleanupParser();
-            #ifdef MALLOC_VER
-		    g_free(my_sax_handler);
-		    g_free(infoM);
-		    #endif
+                                    info.first_name);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -397,14 +373,13 @@ timeout_plain_fb2_callback(gpointer data)
             nautilus_file_info_add_string_attribute (handle->file,
                                                     "FB2Extension::fb2_title",
                                                      data_s);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_data",
-                                    g_strdup(data_s),
-                                    g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                    data_s);
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_title",
-                                    data_s,
-                                    g_free);
+                                    data_s);
+            g_free(data_s);
         }
         g_free(filename);
     }
@@ -427,19 +402,9 @@ timeout_zip_fb2_callback(gpointer data)
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
-        #ifdef MALLOC_VER
         FB2Info info;
-		FB2Info *infoM = (FB2Info *)g_malloc0(sizeof(FB2Info));
-		const int result = read_from_zip_fb2(filename, infoM);
-	    #else
 		const int result = read_from_zip_fb2(filename, &info);
-		#endif
         if(result == 0) {
-			#ifdef MALLOC_VER
-			g_strlcpy(info.title, infoM->title, TITLE_LENGTH);
-			g_strlcpy(info.last_name, infoM->last_name, LAST_NAME_LENGTH);
-			g_strlcpy(info.first_name, infoM->first_name, FIRST_NAME_LENGTH);
-			#endif
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_data",
                                                      info.title );
@@ -454,26 +419,18 @@ timeout_zip_fb2_callback(gpointer data)
                                                      info.first_name);
         
             /* Cache the data so that we don't have to read it again */
-            g_object_set_data_full(G_OBJECT (handle->file), 
+            g_object_set_data(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_data",
-                                            g_strdup(info.title),
-                                            g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                            info.title);
+            g_object_set_data(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_title",
-                                            g_strdup(info.title),
-                                            g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                            info.title);
+            g_object_set_data(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_lastname",
-                                            g_strdup(info.last_name),
-                                            g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                            info.last_name);
+            g_object_set_data(G_OBJECT (handle->file), 
                                             "fb2_extension_fb2_firstname",
-                                            g_strdup(info.first_name),
-                                            g_free);
-            xmlCleanupParser();
-            #ifdef MALLOC_VER
-		    g_free(infoM);
-		    #endif
+                                            info.first_name);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -482,14 +439,12 @@ timeout_zip_fb2_callback(gpointer data)
             nautilus_file_info_add_string_attribute (handle->file,
                                                     "FB2Extension::fb2_title",
                                                      data_s);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_data",
-                                    g_strdup(data_s),
-                                    g_free);
-            g_object_set_data_full(G_OBJECT (handle->file), 
+                                    data_s);
+            g_object_set_data(G_OBJECT (handle->file), 
                                     "fb2_extension_fb2_title",
-                                    data_s,
-                                    g_free);
+                                    data_s);
         }
         g_free(filename);
     }
@@ -591,15 +546,10 @@ parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
     else {
         my_size = (int)uncomp_size;   
     }
-    #ifdef MALLOC_VER
-    xmlSAXHandler *my_sax_handler = (xmlSAXHandler *)g_malloc0(sizeof(xmlSAXHandler));
-    make_sax_handler(my_sax_handler, info);
-    const int result = xmlSAXUserParseMemory(my_sax_handler, NULL, content, my_size);
-    g_free(my_sax_handler);
-    #else
+
     make_sax_handler(&my_sax_handler, info);
     const int result = xmlSAXUserParseMemory(&my_sax_handler, NULL, content, my_size);
-    #endif
+
     return(result);
 }
 
@@ -613,6 +563,14 @@ static void make_sax_handler(xmlSAXHandler *SAXHander,
     SAXHander->_private = user_data;
 }
 
+static inline int 
+min(int a, int b)
+{
+    if(a < b)
+        return a;
+    return b;
+}
+
 static void
 OnCharacters(void * ctx,
     const xmlChar * ch,
@@ -624,17 +582,23 @@ OnCharacters(void * ctx,
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
     switch (info->my_state) {
-    case AUTHOR_FIRSTNAME_OPENED:
+    case AUTHOR_FIRSTNAME_OPENED: {
+        const int len2 = min(len, FIRST_NAME_LENGTH);
         strncpy(info->first_name, (const char *)ch, len);
         info->my_state = AUTHOR_FIRSTNAME_END;
+        }
         break;
-    case AUTHOR_LASTNAME_OPENED:
-        strncpy(info->last_name, (const char *)ch, len);
+    case AUTHOR_LASTNAME_OPENED: {
+        const int len2 = min(len, LAST_NAME_LENGTH);
+        strncpy(info->last_name, (const char *)ch, len2);
         info->my_state = AUTHOR_LASTNAME_END;
+        }
         break;
-    case BOOK_TITLE_OPENED:
-        strncpy(info->title, (const char *)ch, len);
+    case BOOK_TITLE_OPENED: {
+        const int len2 = min(len, TITLE_LENGTH);
+        strncpy(info->title, (const char *)ch, len2);
         info->my_state = BOOK_TITLE_END;
+        }
         break;
     default:
         break;
