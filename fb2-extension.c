@@ -14,6 +14,8 @@
 #include <libnautilus-extension/nautilus-column-provider.h>
 #include <libnautilus-extension/nautilus-info-provider.h>
 
+#define ZIP_BUFFER_LEN 256
+
 typedef struct _FB2Extension FB2Extension;
 typedef struct _FB2ExtensionClass FB2ExtensionClass;
 
@@ -72,7 +74,6 @@ typedef struct {
 } FB2Info;
         
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
-static int parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info);
 
 static void make_sax_handler(xmlSAXHandler *SAXHander, void *user_data);
 static void OnStartElementNs(
@@ -480,6 +481,8 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
     zip_uint64_t uncomp_size; /* Zize of uncompressed file */
     zip_int64_t fread_len; /* Really read bytes from zipped file. */
     int len;
+    char buffer[ZIP_BUFFER_LEN];
+    memset(buffer, 0, sizeof(buffer));
     if ((za = zip_open(archive, 0, &err)) == NULL) {
         zip_error_to_str(errbuf, sizeof(errbuf), err, errno);
         return 2;
@@ -492,41 +495,39 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
             uncomp_size = sb.size;
             if (sb.name[len-1] == '/') {
                 //safe_create_dir(sb.name);
-                ;
-            } else {
-                if(len > 4 && g_strcmp0(&sb.name[len-4], ".fb2") == 0) {
-                    zf = zip_fopen_index(za, i, 0);
-                    if(!zf) {
-                        zip_close(za);
-                        return(3);
-                    }
-                    /* Cast to size_t conversion safe (for malloc).*/
-                    if(SIZE_MAX < uncomp_size+1) {
-                        zip_close(za);
-                        return(3);
-                    }
-                    /* Conversion from zip_uint64_t to size_t is bad, but no way.*/
-                    dataEntry = (char *)g_malloc0((size_t)uncomp_size+1);
-                    if(dataEntry != NULL) {
-                        fread_len = zip_fread(zf, dataEntry, uncomp_size);
-                        if(fread_len < 0) {
-                            zip_fclose(zf);
-                            free(dataEntry);
-                            zip_close(za);
-                            return(4);
-                        }
-                        if((zip_uint64_t)fread_len < uncomp_size) {
-                            zip_fclose(zf);
-                            free(dataEntry);
-                            zip_close(za);
-                            return(4);
-                        }
-                        result = parse_xml_from_buffer(dataEntry, uncomp_size, info);
-                        zip_fclose(zf);
-                        g_free(dataEntry);
+                continue;
+            }
+            if(len > 4 && g_strcmp0(&sb.name[len-4], ".fb2") == 0) {
+                zf = zip_fopen_index(za, i, 0);
+                if(!zf) {
+                    zip_close(za);
+                    return(3);
+                }
+                xmlSAXHandler SAXHander;
+                make_sax_handler(&SAXHander, contentFilename);
+                fread_len = zip_fread(zf, buffer, sizeof(buffer));
+                if(fread_len <= 0) {
+                    zip_fclose(zf);
+                    zip_close(za);
+                    return(3);
+                }
+                xmlParserCtxtPtr ctxt = xmlCreatePushParserCtxt(
+                    &SAXHander, NULL, buffer, fread_len, NULL
+                );    
+                while(fread_len > 0) {
+                    fread_len = zip_fread(zf, buffer, sizeof(buffer));
+                    if(fread_len <= 0)
                         break;
+                    if(xmlParseChunk(ctxt, buffer, fread_len, 0)) {
+                        xmlParserError(ctxt, "xmlParseChunk");
+                        zip_fclose(zf);
+                        zip_close(za);
+                        return 3;
                     }
                 }
+                zip_fclose(zf);
+                /* In here we read data from one fb2 file.*/
+                break;
             }
         }
     }
@@ -536,26 +537,10 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
     return result;
 }
 
-static int
-parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
-{
-    int my_size;
-    if(INT32_MAX < uncomp_size+1) {
-        my_size = INT32_MAX -1;
-    }
-    else {
-        my_size = (int)uncomp_size;   
-    }
-
-    make_sax_handler(&my_sax_handler, info);
-    const int result = xmlSAXUserParseMemory(&my_sax_handler, NULL, content, my_size);
-
-    return(result);
-}
-
 static void make_sax_handler(xmlSAXHandler *SAXHander,
     void *user_data)
 {
+    memset(SAXHander, 0, sizeof(xmlSAXHandler));
     SAXHander->initialized = XML_SAX2_MAGIC;
     SAXHander->startElementNs = OnStartElementNs;
     SAXHander->endElementNs = OnEndElementNs;
