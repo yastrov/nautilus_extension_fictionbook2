@@ -66,10 +66,14 @@ static void fb2_extension_cancel_update(NautilusInfoProvider *provider,
 #define TITLE_LENGTH 240
 #define FIRST_NAME_LENGTH 50
 #define LAST_NAME_LENGTH 20
+#define SEQUENCE_NAME_LENGTH 140
+#define SEQUENCE_NUM_LENGTH 4
 typedef struct {
     char title[TITLE_LENGTH];
     char first_name[FIRST_NAME_LENGTH];
     char last_name[LAST_NAME_LENGTH];
+    char sequence_name[SEQUENCE_NAME_LENGTH];
+    char sequence_num[SEQUENCE_NUM_LENGTH];
     enum FSM_State my_state;
 } FB2Info;
         
@@ -207,6 +211,16 @@ static GList *fb2_extension_get_columns(NautilusColumnProvider *provider)
                                   "FB2Extension::fb2_title",
                                   "FB2 Title",
                                   "FictionBook2 Title");
+    ret = g_list_append(ret, column);
+    column = nautilus_column_new ("FB2Extension::fb2_sequencename_column",
+                                  "FB2Extension::fb2_sequencename",
+                                  "FB2 Sequence name",
+                                  "FictionBook2 Sequence name");
+    ret = g_list_append(ret, column);
+    column = nautilus_column_new ("FB2Extension::fb2_sequencenum_column",
+                                  "FB2Extension::fb2_sequencenum",
+                                  "FB2 Sequence number",
+                                  "FictionBook2 Sequence number");
     ret = g_list_append(ret, column);
     return ret;
 }
@@ -591,6 +605,16 @@ OnCharacters(void * ctx,
 }
 
 static void
+my_strlcpy(char *dest, const char *src_begin, const char *src_end, size_t count)
+{
+    size_t i = 0;
+    //for(char *a=(char *)src_begin; a < src_end && i < count; ++a, ++i)
+    //dest[i] = *a;
+    for(char *a = (char *)src_begin; a < src_end && i < count; ++a, ++i, ++dest)
+        *dest = *a;
+}
+
+static void
 OnStartElementNs(
     void *ctx,
     const xmlChar *localname,
@@ -623,6 +647,25 @@ OnStartElementNs(
     }
     if (g_strcmp0((const char*)localname, "book-title") == 0) {
         info->my_state = BOOK_TITLE_OPENED;
+        return;
+    }
+    if (g_strcmp0((const char*)localname, "sequence") == 0) {
+        size_t index = 0;
+        for(int indexAttr = 0;
+            indexAttr < nb_attributes;
+            ++indexAttr, index += 5) {
+            const xmlChar *a_localname = attributes[index];
+            const xmlChar *a_prefix = attributes[index+1];
+            const xmlChar *a_nsURI = attributes[index+2];
+            const xmlChar *a_valueBegin = attributes[index+3];
+            const xmlChar *a_valueEnd = attributes[index+4];
+            if(g_strcmp0((const char*)a_localname, "name") == 0) {
+                my_strlcpy(info->sequence_name, (const char *)a_valueBegin, (const char *)a_valueEnd, SEQUENCE_NAME_LENGTH);
+            }
+            if( g_strcmp0((const char*)a_localname, "number") == 0) {
+                my_strlcpy(info->sequence_num, (const char *)a_valueBegin, (const char *)a_valueEnd, SEQUENCE_NUM_LENGTH);
+            }
+        }
         return;
     }
 }
