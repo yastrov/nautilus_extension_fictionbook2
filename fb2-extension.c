@@ -78,6 +78,10 @@ typedef struct {
 } FB2Info;
         
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
+static inline void 
+set_info_to_string_attribute(NautilusFileInfo *file, FB2Info *info);
+static inline void 
+set_info_to_object(NautilusFileInfo *file, FB2Info *info);
 
 static void make_sax_handler(xmlSAXHandler *SAXHander, void *user_data);
 static void OnStartElementNs(
@@ -251,6 +255,8 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
     dataTitle = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_title");
     dataLastName = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_lastname");
     dataFirstName = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_firstname");
+    char *dataSeqName = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_sequencename");
+    char *dataSeqNum = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_sequencenum");
 
     /* get and provide the information associated with the column.
        If the operation is not fast enough, we should use the arguments 
@@ -311,6 +317,13 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
     nautilus_file_info_add_string_attribute(file,
                                             "FB2Extension::fb2_firstname",
                                             dataFirstName);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_sequencename",
+                                            dataSeqName);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_sequencenum",
+                                            dataSeqNum);
+
     return NAUTILUS_OPERATION_COMPLETE;
 }
 
@@ -354,32 +367,8 @@ timeout_plain_fb2_callback(gpointer data)
 	    const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
 
         if(result >= 0) {
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_data",
-                                                     info.title );
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_title",
-                                                     info.title);
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_lastname",
-                                                    info.last_name);
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_firstname",
-                                                    info.first_name);
-        
-            /* Cache the data so that we don't have to read it again */
-            g_object_set_data(G_OBJECT (handle->file), 
-                                    "FB2Extension::fb2_data",
-                                    info.title);
-            g_object_set_data(G_OBJECT (handle->file), 
-                                    "FB2Extension::fb2_title",
-                                    info.title);
-            g_object_set_data(G_OBJECT (handle->file), 
-                                    "FB2Extension::fb2_lastname",
-                                    info.last_name);
-            g_object_set_data(G_OBJECT (handle->file), 
-                                    "FB2Extension::fb2_firstname",
-                                    info.first_name);
+            set_info_to_string_attribute(handle->file, &info);
+            set_info_to_object(handle->file, &info);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -420,32 +409,8 @@ timeout_zip_fb2_callback(gpointer data)
         FB2Info info;
 		const int result = read_from_zip_fb2(filename, &info);
         if(result == 0) {
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_data",
-                                                     info.title );
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_title",
-                                                     info.title);
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_lastname",
-                                                     info.last_name);
-            nautilus_file_info_add_string_attribute(handle->file,
-                                                    "FB2Extension::fb2_firstname",
-                                                     info.first_name);
-        
-            /* Cache the data so that we don't have to read it again */
-            g_object_set_data(G_OBJECT (handle->file), 
-                                            "FB2Extension::fb2_data",
-                                            info.title);
-            g_object_set_data(G_OBJECT (handle->file), 
-                                            "FB2Extension::fb2_title",
-                                            info.title);
-            g_object_set_data(G_OBJECT (handle->file), 
-                                            "FB2Extension::fb2_lastname",
-                                            info.last_name);
-            g_object_set_data(G_OBJECT (handle->file), 
-                                            "FB2Extension::fb2_firstname",
-                                            info.first_name);
+            set_info_to_string_attribute(handle->file, &info);
+            set_info_to_object(handle->file, &info);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -689,4 +654,51 @@ OnEndElementNs(
     }
     if (g_strcmp0((const char*)localname, "title-info") == 0)
         xmlStopParser(ctx);
+}
+
+static inline void 
+set_info_to_string_attribute(NautilusFileInfo *file, FB2Info *info)
+{
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_data",
+                                             info->title );
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_title",
+                                             info->title);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_lastname",
+                                            info->last_name);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_firstname",
+                                            info->first_name);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_sequencename",
+                                            info->sequence_name);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_sequencenum",
+                                            info->sequence_num);
+}
+
+static inline void 
+set_info_to_object(NautilusFileInfo *file, FB2Info *info)
+{
+    /* Cache the data so that we don't have to read it again */
+    g_object_set_data(G_OBJECT (file), 
+                        "FB2Extension::fb2_data",
+                        info->title);
+    g_object_set_data(G_OBJECT (file), 
+                        "FB2Extension::fb2_title",
+                        info->title);
+    g_object_set_data(G_OBJECT (file), 
+                        "FB2Extension::fb2_lastname",
+                        info->last_name);
+    g_object_set_data(G_OBJECT (file), 
+                        "FB2Extension::fb2_firstname",
+                        info->first_name);
+    g_object_set_data(G_OBJECT (file), 
+                        "FB2Extension::fb2_sequencename",
+                        info.sequence_name);
+    g_object_set_data(G_OBJECT (file), 
+                        "FB2Extension::fb2_sequencenum",
+                        info->sequence_num);
 }
