@@ -232,10 +232,10 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
     char *dataFirstName = NULL;
     char *dataLastName = NULL;
     /* Check if we've previously cached the file info */
-    data = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_data");
-    dataTitle = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_title");
-    dataLastName = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_lastname");
-    dataFirstName = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_firstname");
+    data = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_data");
+    dataTitle = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_title");
+    dataLastName = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_lastname");
+    dataFirstName = g_object_get_data (G_OBJECT (file), "FB2Extension::fb2_firstname");
 
     /* get and provide the information associated with the column.
        If the operation is not fast enough, we should use the arguments 
@@ -354,16 +354,16 @@ timeout_plain_fb2_callback(gpointer data)
         
             /* Cache the data so that we don't have to read it again */
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_data",
+                                    "FB2Extension::fb2_data",
                                     info.title);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_title",
+                                    "FB2Extension::fb2_title",
                                     info.title);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_lastname",
+                                    "FB2Extension::fb2_lastname",
                                     info.last_name);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_firstname",
+                                    "FB2Extension::fb2_firstname",
                                     info.first_name);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
@@ -374,10 +374,10 @@ timeout_plain_fb2_callback(gpointer data)
                                                     "FB2Extension::fb2_title",
                                                      data_s);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_data",
+                                    "FB2Extension::fb2_data",
                                     data_s);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_title",
+                                    "FB2Extension::fb2_title",
                                     data_s);
             g_free(data_s);
         }
@@ -420,16 +420,16 @@ timeout_zip_fb2_callback(gpointer data)
         
             /* Cache the data so that we don't have to read it again */
             g_object_set_data(G_OBJECT (handle->file), 
-                                            "fb2_extension_fb2_data",
+                                            "FB2Extension::fb2_data",
                                             info.title);
             g_object_set_data(G_OBJECT (handle->file), 
-                                            "fb2_extension_fb2_title",
+                                            "FB2Extension::fb2_title",
                                             info.title);
             g_object_set_data(G_OBJECT (handle->file), 
-                                            "fb2_extension_fb2_lastname",
+                                            "FB2Extension::fb2_lastname",
                                             info.last_name);
             g_object_set_data(G_OBJECT (handle->file), 
-                                            "fb2_extension_fb2_firstname",
+                                            "FB2Extension::fb2_firstname",
                                             info.first_name);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
@@ -440,10 +440,10 @@ timeout_zip_fb2_callback(gpointer data)
                                                     "FB2Extension::fb2_title",
                                                      data_s);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_data",
+                                    "FB2Extension::fb2_data",
                                     data_s);
             g_object_set_data(G_OBJECT (handle->file), 
-                                    "fb2_extension_fb2_title",
+                                    "FB2Extension::fb2_title",
                                     data_s);
         }
         g_free(filename);
