@@ -483,7 +483,8 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                     return(3);
                 }
                 xmlSAXHandler SAXHander;
-                make_sax_handler(&SAXHander, contentFilename);
+                info->my_state = INIT;
+                make_sax_handler(&SAXHander, info);
                 fread_len = zip_fread(zf, buffer, sizeof(buffer));
                 if(fread_len <= 0) {
                     zip_fclose(zf);
@@ -493,7 +494,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                 xmlParserCtxtPtr ctxt = xmlCreatePushParserCtxt(
                     &SAXHander, NULL, buffer, fread_len, NULL
                 );    
-                while(fread_len > 0) {
+                while(fread_len > 0 && info->my_state != STOP) {
                     fread_len = zip_fread(zf, buffer, sizeof(buffer));
                     if(fread_len <= 0)
                         break;
@@ -648,12 +649,10 @@ OnEndElementNs(
 	#endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
-    if (info->my_state == BOOK_TITLE_END) {
+    if (g_strcmp0((const char*)localname, "title-info") == 0) {
+        info->my_state = STOP;
         xmlStopParser(ctx);
-        return;
     }
-    if (g_strcmp0((const char*)localname, "title-info") == 0)
-        xmlStopParser(ctx);
 }
 
 static inline void 
