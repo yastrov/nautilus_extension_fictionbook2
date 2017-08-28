@@ -576,8 +576,8 @@ my_strlcpy(char *dest, const char *src_begin, const char *src_end, size_t count)
     size_t i = 0;
     //for(char *a=(char *)src_begin; a < src_end && i < count; ++a, ++i)
     //dest[i] = *a;
-    for(char *a = (char *)src_begin; a < src_end && i < count; ++a, ++i, ++dest)
-        *dest = *a;
+    for(; src_begin < src_end && i < count; ++src_begin, ++i, ++dest)
+        *dest = *src_begin;
 }
 
 static void
