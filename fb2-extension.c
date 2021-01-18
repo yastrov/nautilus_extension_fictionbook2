@@ -11,8 +11,7 @@
 #endif
 #include <glib.h>
 #include <gio/gio.h>
-#include <libnautilus-extension/nautilus-column-provider.h>
-#include <libnautilus-extension/nautilus-info-provider.h>
+#include <nautilus-extension.h>
 
 #define ZIP_BUFFER_LEN 256
 
