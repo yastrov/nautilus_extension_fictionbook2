@@ -12,8 +12,7 @@
 
 #include <glib.h>
 #include <gio/gio.h>
-#include <libnautilus-extension/nautilus-column-provider.h>
-#include <libnautilus-extension/nautilus-info-provider.h>
+#include <nautilus-extension.h>
 
 typedef struct _FB2Extension FB2Extension;
 typedef struct _FB2ExtensionClass FB2ExtensionClass;
