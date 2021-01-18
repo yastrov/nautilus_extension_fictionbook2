@@ -372,6 +372,7 @@ timeout_plain_fb2_callback(gpointer data)
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
         
         FB2Info info;
+        memset(&info, 0, sizeof(FB2Info));
         xmlSAXHandler my_sax_handler;
 	    make_sax_handler(&my_sax_handler, &info);
 	    const int result = xmlSAXUserParseFile(&my_sax_handler, NULL, filename);
@@ -417,6 +418,7 @@ timeout_zip_fb2_callback(gpointer data)
     if (!handle->cancelled) {
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
         FB2Info info;
+        memset(&info, 0, sizeof(FB2Info));
 		const int result = read_from_zip_fb2(filename, &info);
         if(result == FB2_RESULT_OK) {
             set_info_to_string_attribute(handle->file, &info);
