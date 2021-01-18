@@ -106,6 +106,17 @@ static void OnCharacters(void * ctx,
 	const xmlChar * ch,
 	int len);
 
+enum FB2_RESULT {
+    FB2_RESULT_OK = 0,
+    FB2_RESULT_INVALID_FB2,   
+    FB2_RESULT_ZIP_CANT_OPEN,
+    FB2_RESULT_ZIP_OPEN_FILE_ERR,
+    FB2_RESULT_ZIP_READ_FILE_ERR, 
+    FB2_RESULT_ZIP_CANT_CLOSE, 
+    FB2_RESULT_UNABLE_PARSE_MEM_BUFF, 
+    FB2_RESULT_UNABLE_CREATE_XPATH_CONTEXT 
+};
+
 const static char nonFb2[] = "Non FB2 file.";
 const static char *fb2_errors[] = {"ok", "Invalid FB2 file.", "can't open zip archive",
                                     "ZIP read error", "ZIP inner file read error",
@@ -370,7 +381,7 @@ timeout_plain_fb2_callback(gpointer data)
             set_info_to_string_attribute(handle->file, &info);
             set_info_to_object(handle->file, &info);
         } else {
-            char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
+            char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[FB2_RESULT_INVALID_FB2], result);
             nautilus_file_info_add_string_attribute (handle->file,
                                                     "FB2Extension::fb2_data",
                                                      data_s);
@@ -408,7 +419,7 @@ timeout_zip_fb2_callback(gpointer data)
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
         FB2Info info;
 		const int result = read_from_zip_fb2(filename, &info);
-        if(result == 0) {
+        if(result == FB2_RESULT_OK) {
             set_info_to_string_attribute(handle->file, &info);
             set_info_to_object(handle->file, &info);
         } else {
@@ -445,7 +456,7 @@ timeout_zip_fb2_callback(gpointer data)
 static int
 read_from_zip_fb2(const char *archive, FB2Info *info)
 {
-    int result = 0; /* Result for operation */
+    int result = FB2_RESULT_OK; /* Result for operation */
     /* Zip error */
     int err = 0;
     char errbuf[100];
@@ -464,7 +475,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
     memset(buffer, 0, sizeof(buffer));
     if ((za = zip_open(archive, 0, &err)) == NULL) {
         zip_error_to_str(errbuf, sizeof(errbuf), err, errno);
-        return 2;
+        return FB2_RESULT_ZIP_CANT_OPEN;
     }
     num64 = zip_get_num_entries(za, 0);
     for (i = 0; i < num64; ++i) {
@@ -480,7 +491,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                 zf = zip_fopen_index(za, i, 0);
                 if(!zf) {
                     zip_close(za);
-                    return(3);
+                    return(FB2_RESULT_ZIP_OPEN_FILE_ERR);
                 }
                 xmlSAXHandler SAXHander;
                 info->my_state = INIT;
@@ -489,7 +500,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                 if(fread_len <= 0) {
                     zip_fclose(zf);
                     zip_close(za);
-                    return(3);
+                    return(FB2_RESULT_ZIP_OPEN_FILE_ERR);
                 }
                 xmlParserCtxtPtr ctxt = xmlCreatePushParserCtxt(
                     &SAXHander, NULL, buffer, fread_len, NULL
@@ -502,7 +513,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                         xmlParserError(ctxt, "xmlParseChunk");
                         zip_fclose(zf);
                         zip_close(za);
-                        return 3;
+                        return FB2_RESULT_ZIP_READ_FILE_ERR;
                     }
                 }
                 zip_fclose(zf);
@@ -512,7 +523,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
         }
     }
     if (zip_close(za) == -1) {
-        return(5);
+        return(FB2_RESULT_ZIP_CANT_CLOSE);
     }
     return result;
 }
