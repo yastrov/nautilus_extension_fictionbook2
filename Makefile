@@ -1,5 +1,5 @@
 CFLAGS = -fPIC -Wall -lzip `pkg-config libnautilus-extension --cflags libxml-2.0 libzip`
-AM_LDFLAGS = -lzip `pkg-config libnautilus-extension libxml-2.0 --libs `
+AM_LDFLAGS = -lzip `pkg-config libnautilus-extension --libs libxml-2.0 libzip`
 
 all: fb2-extension.o
 	gcc -shared fb2-extension.o -o fb2-extension.so $(AM_LDFLAGS)
