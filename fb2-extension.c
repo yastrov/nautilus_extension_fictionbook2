@@ -74,6 +74,7 @@ typedef struct {
     char sequence_name[SEQUENCE_NAME_LENGTH];
     char sequence_num[SEQUENCE_NUM_LENGTH];
     enum FSM_State my_state;
+    enum FSM_State my_author_state;
 } FB2Info;
         
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
@@ -556,19 +557,29 @@ OnCharacters(void * ctx,
 	#ifdef DEBUG
 	fprintf(stderr, "Event: OnCharacters!\n");
 	#endif
+	// http://xmlsoft.org/html/libxml-tree.html#xmlParserCtxt
+	// http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
+    //const xmlChar *cur_tag_name = ((xmlParserCtxtPtr)ctx)->name;
+    
     FB2Info *info = (FB2Info *)(handler->_private);
     switch (info->my_state) {
     case AUTHOR_FIRSTNAME_OPENED: {
+		if(info->my_author_state == AUTHOR_OPENED) {
         const int len2 = min(len, FIRST_NAME_LENGTH);
-        strncpy(info->first_name, (const char *)ch, len);
+        strncpy(info->first_name, (const char *)ch, len2);
+        info->my_author_state = AUTHOR_FIRSTNAME_END;
         info->my_state = AUTHOR_FIRSTNAME_END;
+        }
         }
         break;
     case AUTHOR_LASTNAME_OPENED: {
+		if(info->my_author_state == AUTHOR_OPENED) {
         const int len2 = min(len, LAST_NAME_LENGTH);
         strncpy(info->last_name, (const char *)ch, len2);
+        info->my_author_state = AUTHOR_LASTNAME_END;
         info->my_state = AUTHOR_LASTNAME_END;
+	    }
         }
         break;
     case BOOK_TITLE_OPENED: {
@@ -608,11 +619,17 @@ OnStartElementNs(
 	#ifdef DEBUG
 	fprintf (stderr, "Event: OnStartElementNs!\n");
 	#endif
+	// http://xmlsoft.org/html/libxml-tree.html#xmlParserCtxt
+	// http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler
+	// http://xmlsoft.org/html/libxml-tree.html#xmlNode
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
+    //const xmlChar *cur_tag_name = ((xmlParserCtxtPtr)ctx)->name;
+    //xmlNodePtr curr_node = ((xmlParserCtxtPtr)ctx)->node;
     FB2Info *info = (FB2Info *)(handler->_private);
     info->my_state = INIT;
     if (g_strcmp0((const char*)localname, "author") == 0) {
         info->my_state = AUTHOR_OPENED;
+        info->my_author_state = AUTHOR_OPENED;
         return;
     }
     if (g_strcmp0((const char*)localname, "first-name") == 0) {
@@ -661,6 +678,10 @@ OnEndElementNs(
 	#endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
+    if (g_strcmp0((const char*)localname, "author") == 0) {
+		info->my_state = AUTHOR_END;
+		info->my_author_state = AUTHOR_END;
+	}
     if (g_strcmp0((const char*)localname, "title-info") == 0) {
         info->my_state = STOP;
         xmlStopParser(ctx);
