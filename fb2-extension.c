@@ -706,7 +706,7 @@ set_info_to_object(NautilusFileInfo *file, FB2Info *info)
                         info->first_name);
     g_object_set_data(G_OBJECT (file), 
                         "FB2Extension::fb2_sequencename",
-                        info.sequence_name);
+                        info->sequence_name);
     g_object_set_data(G_OBJECT (file), 
                         "FB2Extension::fb2_sequencenum",
                         info->sequence_num);
