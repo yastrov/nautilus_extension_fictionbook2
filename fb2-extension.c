@@ -65,7 +65,7 @@ enum FB2_RESULT {
     FB2_RESULT_ZIP_CANT_CLOSE,
     FB2_RESULT_UNABLE_PARSE_MEM_BUFF,
     FB2_RESULT_UNABLE_CREATE_XPATH_CONTEXT
-}
+};
 
 const static char nonFb2[] = "Non FB2 file.";
 const static char *fb2_errors[] = {"ok", "Invalid FB2 file.", "can't open zip archive",
