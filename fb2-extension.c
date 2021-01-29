@@ -257,6 +257,19 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
 {
     if(nautilus_file_info_is_directory(file))
         return NAUTILUS_OPERATION_COMPLETE;
+    char *mime_type = nautilus_file_info_get_mime_type(file);
+    if( !(g_strcmp0(mime_type, "application/x-fictionbook+xml") == 0 ||
+    g_strcmp0(mime_type, "application/x-zip-compressed-fb2") == 0 ) )
+    {
+        #ifdef DEBUG
+        char *filename = nautilus_file_info_get_name(file);
+        fprintf(stderr, "Filename %s MIME: %s\n", filename, mime_type);
+        g_free(filename);
+        #endif
+        g_free(mime_type);
+        return NAUTILUS_OPERATION_COMPLETE;
+    }
+    g_free(mime_type);
     char *data = NULL;
     char *dataTitle = NULL;
     char *dataFirstName = NULL;
