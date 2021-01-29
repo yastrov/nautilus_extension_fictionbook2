@@ -485,11 +485,14 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
     zip_uint64_t i;    /* Counter, for 0..num64 */
     zip_uint64_t uncomp_size; /* Zize of uncompressed file */
     zip_int64_t fread_len; /* Really read bytes from zipped file. */
-    size_t len;
+    size_t len = 0;
     char buffer[ZIP_BUFFER_LEN];
     memset(buffer, 0, sizeof(buffer));
     if ((za = zip_open(archive, 0, &err)) == NULL) {
         zip_error_to_str(errbuf, sizeof(errbuf), err, errno);
+        #ifdef DEBUG
+        fprintf(stderr, "Can't read file %s error %s\n", archive, errbuf);
+        #endif
         return FB2_RESULT_ZIP_CANT_OPEN;
     }
     num64 = zip_get_num_entries(za, 0);
@@ -506,6 +509,9 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                 zf = zip_fopen_index(za, i, 0);
                 if(!zf) {
                     zip_close(za);
+                    #ifdef DEBUG
+                    fprintf(stderr, "Can't read inner file %s in %s\n", sb.name, archive);
+                    #endif
                     return(FB2_RESULT_ZIP_OPEN_FILE_ERR);
                 }
                 xmlSAXHandler SAXHander;
@@ -515,22 +521,45 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                 if(fread_len <= 0) {
                     zip_fclose(zf);
                     zip_close(za);
+                    #ifdef DEBUG
+                    fprintf(stderr, "Can't read from file %s/%s to data buffer\n", archive, sb.name);
+                    #endif
                     return(FB2_RESULT_ZIP_OPEN_FILE_ERR);
                 }
                 xmlParserCtxtPtr ctxt = xmlCreatePushParserCtxt(
                     &SAXHander, NULL, buffer, fread_len, NULL
-                );    
+                );
                 while(fread_len > 0 && info->my_state != STOP) {
                     fread_len = zip_fread(zf, buffer, sizeof(buffer));
-                    if(fread_len <= 0)
+                    if(fread_len <= 0) {
+                        #ifdef DEBUG
+                        fprintf(stderr, "Can't read from file %s/%s to data buffer\n", archive, sb.name);
+                        #endif
                         break;
-                    if(xmlParseChunk(ctxt, buffer, fread_len, 0)) {
+                    }
+                    const int xml_parse_result = xmlParseChunk(ctxt, buffer, fread_len, 0);
+                    if(xml_parse_result == XML_ERR_USER_STOP) {
+                        zip_fclose(zf);
+                        zip_close(za);
+                        #ifdef DEBUG
+                        fprintf(stderr, "User stop parse XML,\n");
+                        #endif
+                        xmlFreeParserCtxt(ctxt);
+                        return FB2_RESULT_OK;
+                    }
+                    if(xml_parse_result != XML_ERR_OK) {
                         xmlParserError(ctxt, "xmlParseChunk");
                         zip_fclose(zf);
                         zip_close(za);
+                        xmlFreeParserCtxt(ctxt);
+                        #ifdef DEBUG
+                        fprintf(stderr, "Can't parse XML chunk from file %s/%s\n", archive, sb.name);
+                        #endif
                         return FB2_RESULT_ZIP_READ_FILE_ERR;
                     }
+
                 }
+                xmlFreeParserCtxt(ctxt);
                 zip_fclose(zf);
                 /* In here we read data from one fb2 file.*/
                 break;
@@ -538,6 +567,9 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
         }
     }
     if (zip_close(za) == -1) {
+        #ifdef DEBUG
+        fprintf(stderr, "Can't close file %s\n", archive);
+        #endif
         return(FB2_RESULT_ZIP_CANT_CLOSE);
     }
     return result;
@@ -567,32 +599,31 @@ OnCharacters(void * ctx,
     const xmlChar * ch,
     int len)
 {
-	#ifdef DEBUG
-	fprintf(stderr, "Event: OnCharacters!\n");
-	#endif
-	// http://xmlsoft.org/html/libxml-tree.html#xmlParserCtxt
-	// http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler
+    #ifdef DEBUG
+    fprintf(stderr, "Event: OnCharacters!\n");
+    #endif
+    // http://xmlsoft.org/html/libxml-tree.html#xmlParserCtxt
+    // http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler
+    // http://xmlsoft.org/html/libxml-tree.html#xmlNode
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     //const xmlChar *cur_tag_name = ((xmlParserCtxtPtr)ctx)->name;
-    
+    //xmlNodePtr curr_node = ((xmlParserCtxtPtr)ctx)->node;
     FB2Info *info = (FB2Info *)(handler->_private);
     switch (info->my_state) {
     case AUTHOR_FIRSTNAME_OPENED: {
-		if(info->my_author_state == AUTHOR_OPENED) {
+        if(info->my_author_state == AUTHOR_OPENED) {
         const int len2 = min(len, FIRST_NAME_LENGTH);
         strncpy(info->first_name, (const char *)ch, len2);
-        info->my_author_state = AUTHOR_FIRSTNAME_END;
         info->my_state = AUTHOR_FIRSTNAME_END;
         }
         }
         break;
     case AUTHOR_LASTNAME_OPENED: {
-		if(info->my_author_state == AUTHOR_OPENED) {
+        if(info->my_author_state == AUTHOR_OPENED) {
         const int len2 = min(len, LAST_NAME_LENGTH);
         strncpy(info->last_name, (const char *)ch, len2);
-        info->my_author_state = AUTHOR_LASTNAME_END;
         info->my_state = AUTHOR_LASTNAME_END;
-	    }
+        }
         }
         break;
     case BOOK_TITLE_OPENED: {
@@ -629,15 +660,13 @@ OnStartElementNs(
     const xmlChar **attributes
     )
 {
-	#ifdef DEBUG
-	fprintf (stderr, "Event: OnStartElementNs!\n");
-	#endif
-	// http://xmlsoft.org/html/libxml-tree.html#xmlParserCtxt
-	// http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler
-	// http://xmlsoft.org/html/libxml-tree.html#xmlNode
+    #ifdef DEBUG
+    fprintf (stderr, "Event: OnStartElementNs!\n");
+    #endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     //const xmlChar *cur_tag_name = ((xmlParserCtxtPtr)ctx)->name;
-    //xmlNodePtr curr_node = ((xmlParserCtxtPtr)ctx)->node;
+    //xmlNodePtr node = ((xmlParserCtxtPtr)ctx)->node;
+
     FB2Info *info = (FB2Info *)(handler->_private);
     info->my_state = INIT;
     if (g_strcmp0((const char*)localname, "author") == 0) {
@@ -686,15 +715,15 @@ OnEndElementNs(
     const xmlChar* URI
     )
 {
-	#ifdef DEBUG
-	fprintf (stderr, "Event: OnEndElementNs!\n");
-	#endif
+    #ifdef DEBUG
+    fprintf (stderr, "Event: OnEndElementNs!\n");
+    #endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
     if (g_strcmp0((const char*)localname, "author") == 0) {
-		info->my_state = AUTHOR_END;
-		info->my_author_state = AUTHOR_END;
-	}
+        info->my_state = AUTHOR_END;
+        info->my_author_state = AUTHOR_END;
+    }
     if (g_strcmp0((const char*)localname, "title-info") == 0) {
         info->my_state = STOP;
         xmlStopParser(ctx);
