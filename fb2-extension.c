@@ -155,28 +155,26 @@ static GList *fb2_extension_get_columns(NautilusColumnProvider *provider)
 {
     NautilusColumn *column;
     GList *ret = NULL;
-    GList *_ret = NULL;
     column = nautilus_column_new ("FB2Extension::fb2_data_column",
                                   "FB2Extension::fb2_data",
                                   "FB2 Information",
                                   "FictionBook2 Information");
     ret = g_list_append(ret, column);
-    _ret = ret;
     column = nautilus_column_new ("FB2Extension::fb2_lastname_column",
                                   "FB2Extension::fb2_lastname",
                                   "FB2 Lastname",
                                   "FictionBook2 Author Lastname");
-    _ret = g_list_append(_ret, column);
+    ret = g_list_append(ret, column);
     column = nautilus_column_new ("FB2Extension::fb2_firsttname_column",
                                   "FB2Extension::fb2_firstname",
                                   "FB2 Firsttname",
                                   "FictionBook2 Author Firstname");
-    _ret = g_list_append(_ret, column);
+    ret = g_list_append(ret, column);
     column = nautilus_column_new ("FB2Extension::fb2_title_column",
                                   "FB2Extension::fb2_title",
                                   "FB2 Title",
                                   "FictionBook2 Title");
-    _ret = g_list_append(_ret, column);
+    ret = g_list_append(ret, column);
     return ret;
 }
 
