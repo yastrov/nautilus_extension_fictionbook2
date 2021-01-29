@@ -287,7 +287,7 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
        update_complete and handle for asyncrhnous operation. */
     if (!data) {
         char *filename = nautilus_file_info_get_name(file);
-        const int len = strlen(filename);
+        const size_t len = strlen(filename);
         if(len > 4 && g_strcmp0(&filename[len-4], ".fb2") == 0) {
             /* Plain FB2 */
             UpdateHandle *update_handle = g_new0 (UpdateHandle, 1);
@@ -485,7 +485,7 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
     zip_uint64_t i;    /* Counter, for 0..num64 */
     zip_uint64_t uncomp_size; /* Zize of uncompressed file */
     zip_int64_t fread_len; /* Really read bytes from zipped file. */
-    int len;
+    size_t len;
     char buffer[ZIP_BUFFER_LEN];
     memset(buffer, 0, sizeof(buffer));
     if ((za = zip_open(archive, 0, &err)) == NULL) {
