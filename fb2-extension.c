@@ -44,16 +44,21 @@ static NautilusOperationResult fb2_extension_update_file_info (
                                 GClosure *update_complete,
                                 NautilusOperationHandle **handle);
 /* Start FB2 only */                 
-typedef struct {
+#define LEN_SEQUENCE_STR 100
+typedef struct
+{
     xmlChar *title;
     xmlChar *first_name;
     xmlChar *last_name;
+    xmlChar *middle_name;
+    xmlChar sequence[LEN_SEQUENCE_STR];
 } FB2Info;
         
 static int read_from_plain_fb2(const char* filename, FB2Info *info);
 static int read_from_zip_fb2(const char *archive, FB2Info *info);
 static int parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info);
 static int process_xml(xmlDocPtr doc, FB2Info *info);
+static void clear_FB2Info(FB2Info *info);
 
 enum FB2_RESULT {
     FB2_RESULT_OK = 0,
@@ -175,6 +180,11 @@ static GList *fb2_extension_get_columns(NautilusColumnProvider *provider)
                                   "FB2 Title",
                                   "FictionBook2 Title");
     ret = g_list_append(ret, column);
+    column = nautilus_column_new ("FB2Extension::fb2_sequence_column",
+                                  "FB2Extension::fb2_sequence",
+                                  "FB2 sequence",
+                                  "FictionBook2 sequence");
+    ret = g_list_append(ret, column);
     return ret;
 }
 
@@ -204,11 +214,13 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
     char *dataTitle = NULL;
     char *dataFirstName = NULL;
     char *dataLastName = NULL;
+    char *sequence = NULL;
     /* Check if we've previously cached the file info */
     data = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_data");
     dataTitle = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_title");
     dataLastName = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_lastname");
     dataFirstName = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_firstname");
+    sequence = g_object_get_data (G_OBJECT (file), "fb2_extension_fb2_sequence");
 
     /* get and provide the information associated with the column.
        If the operation is not fast enough, we should use the arguments 
@@ -269,6 +281,9 @@ fb2_extension_update_file_info (NautilusInfoProvider *provider,
     nautilus_file_info_add_string_attribute(file,
                                             "FB2Extension::fb2_firstname",
                                             dataFirstName);
+    nautilus_file_info_add_string_attribute(file,
+                                            "FB2Extension::fb2_sequence",
+                                            sequence);
     return NAUTILUS_OPERATION_COMPLETE;
 }
 
@@ -297,6 +312,7 @@ gint
 timeout_plain_fb2_callback(gpointer data)
 {
     FB2Info info;
+    memset(&info, 0, sizeof(FB2Info));
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
@@ -314,6 +330,12 @@ timeout_plain_fb2_callback(gpointer data)
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_firstname",
                                                     (char*)info.first_name);
+            nautilus_file_info_add_string_attribute(handle->file,
+                                                    "FB2Extension::fb2_sequence",
+                                                    (char*)info.sequence);
+            g_object_set_data(G_OBJECT (handle->file),
+                              "fb2_extension_fb2_sequence",
+                              (char*)info.sequence);
         
             /* Cache the data so that we don't have to read it again */
             g_object_set_data_full(G_OBJECT (handle->file), 
@@ -333,9 +355,7 @@ timeout_plain_fb2_callback(gpointer data)
                                     g_strdup((char*)info.first_name),
                                     g_free);
             
-            if(info.title != NULL) xmlFree(info.title);
-            if(info.first_name != NULL) xmlFree(info.first_name);
-            if(info.last_name != NULL) xmlFree(info.last_name);
+            clear_FB2Info(&info);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -372,6 +392,7 @@ gint
 timeout_zip_fb2_callback(gpointer data)
 {
     FB2Info info;
+    memset(&info, 0, sizeof(FB2Info));
     UpdateHandle *handle = (UpdateHandle*)data;
     if (!handle->cancelled) {
         char *filename = g_file_get_path(nautilus_file_info_get_location(handle->file));
@@ -389,6 +410,12 @@ timeout_zip_fb2_callback(gpointer data)
             nautilus_file_info_add_string_attribute(handle->file,
                                                     "FB2Extension::fb2_firstname",
                                                     (char*)info.first_name);
+            nautilus_file_info_add_string_attribute(handle->file,
+                                                    "FB2Extension::fb2_sequence",
+                                                    (char*)info.sequence);
+            g_object_set_data(G_OBJECT (handle->file),
+                                  "fb2_extension_fb2_sequence",
+                                  (char*)info.sequence);
         
             /* Cache the data so that we don't have to read it again */
             g_object_set_data_full(G_OBJECT (handle->file), 
@@ -408,9 +435,7 @@ timeout_zip_fb2_callback(gpointer data)
                                             g_strdup((char*)info.first_name),
                                             g_free);
             
-            if(info.title != NULL) xmlFree(info.title);
-            if(info.first_name != NULL) xmlFree(info.first_name);
-            if(info.last_name != NULL) xmlFree(info.last_name);
+            clear_FB2Info(&info);
         } else {
             char *data_s = g_strdup_printf("%s, Code: %d", fb2_errors[result], result);
             nautilus_file_info_add_string_attribute (handle->file,
@@ -446,9 +471,8 @@ timeout_zip_fb2_callback(gpointer data)
 static int 
 read_from_plain_fb2(const char* filename, FB2Info *info)
 {
-    xmlDocPtr doc;
-
     assert(filename);
+    xmlDocPtr doc;
 
     /* Load XML document */
     doc = xmlParseFile(filename);
@@ -513,13 +537,13 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
                         fread_len = zip_fread(zf, dataEntry, uncomp_size);
                         if(fread_len < 0) {
                             zip_fclose(zf);
-                            free(dataEntry);
+                            g_free(dataEntry);
                             zip_close(za);
                             return(FB2_RESULT_ZIP_READ_FILE_ERR);
                         }
                         if((zip_uint64_t)fread_len < uncomp_size) {
                             zip_fclose(zf);
-                            free(dataEntry);
+                            g_free(dataEntry);
                             zip_close(za);
                             return(FB2_RESULT_ZIP_READ_FILE_ERR);
                         }
@@ -541,8 +565,9 @@ read_from_zip_fb2(const char *archive, FB2Info *info)
 static int
 parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
 {
-    xmlDocPtr doc;
     assert(content);
+    assert(info);
+    xmlDocPtr doc;
     
     doc = xmlReadMemory(content, (size_t)uncomp_size, "fb2.xml", NULL,
             XML_PARSE_NOERROR | XML_PARSE_NOWARNING | XML_PARSE_RECOVER);
@@ -557,56 +582,145 @@ parse_xml_from_buffer(char *content, zip_uint64_t uncomp_size, FB2Info *info)
     return(result);
 }
 
+static xmlXPathObjectPtr
+getnodeset (xmlDocPtr doc, xmlXPathContextPtr context, const xmlChar *xpath)
+{
+    assert(doc);
+    assert(context);
+    asser(xpath);
+    xmlXPathObjectPtr result = NULL;
+    if (context == NULL)
+    {
+#ifdef DEBUG
+        fprintf(stderr, "Error in xmlXPathNewContext\n");
+#endif
+        return NULL;
+    }
+    result = xmlXPathEvalExpression(xpath, context);
+    if (result == NULL)
+    {
+#ifdef DEBUG
+        fprintf(stderr, "Error in xmlXPathEvalExpression\n");
+#endif
+        return NULL;
+    }
+    if(xmlXPathNodeSetIsEmpty(result->nodesetval) )
+    {
+        xmlXPathFreeObject(result);
+#ifdef DEBUG
+        fprintf(stderr, "No result\n");
+#endif
+        return NULL;
+    }
+    return result;
+}
+
 static int
 process_xml(xmlDocPtr doc, FB2Info *info)
 {
-    xmlXPathContextPtr xpathCtx; 
-    xmlXPathObjectPtr xpathObj;
-    xmlXPathObjectPtr xpathObjTitle, xpathObjAuthor, xpathObjAuthorFirtsName, xpathObjAuthorLastName; 
-
-    /* Create xpath evaluation context */
+    assert(doc);
+    assert(info);
+    xmlXPathContextPtr xpathCtx;
     xpathCtx = xmlXPathNewContext(doc);
-    if(xpathCtx == NULL) {
-        return(FB2_RESULT_UNABLE_CREATE_XPATH_CONTEXT);
+    if(xpathCtx == NULL)
+    {
+#ifdef DEBUG
+        fprintf(stderr, "Can't create XPATH context for XML document.\n");
+#endif
+        return FB2_RESULT_UNABLE_CREATE_XPATH_CONTEXT;
     }
-    
-    xmlXPathRegisterNs(xpathCtx , BAD_CAST "fb2", BAD_CAST "http://www.gribuser.ru/xml/fictionbook/2.0");
-    //xpathObj = xmlXPathEval((xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info/fb2:book-title", xpathCtx);
-    xpathObj = xmlXPathEval((xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info", xpathCtx);
-    if (xpathObj->type == XPATH_NODESET) {
-        xmlNodePtr node = xpathCtx->node;
-        xpathCtx->node = xpathObj->nodesetval->nodeTab[0];
-        
-        /*Request Title*/
-        xpathObjTitle = xmlXPathEval((xmlChar*)"fb2:book-title", xpathCtx);
-        if (xpathObjTitle->type == XPATH_NODESET) {
-            info->title = xmlXPathCastNodeSetToString(xpathObjTitle->nodesetval);
-        }
-        xmlXPathFreeObject(xpathObjTitle);
-        /* Request Author */
-        xpathObjAuthor = xmlXPathEval((xmlChar*)"fb2:author", xpathCtx);
-        if (xpathObjAuthor->type == XPATH_NODESET) {
-            /* Set fb2:author node for future context */
-            xpathCtx->node = xpathObjAuthor->nodesetval->nodeTab[0];
-            /* Request first-name */
-            xpathObjAuthorFirtsName = xmlXPathEval((xmlChar*)"fb2:first-name", xpathCtx);
-            if (xpathObjAuthorFirtsName->type == XPATH_NODESET) {
-                info->first_name = xmlXPathCastNodeSetToString(xpathObjAuthorFirtsName->nodesetval);
-            }
-            xmlXPathFreeObject(xpathObjAuthorFirtsName);
-            /* Request last-name */
-            xpathObjAuthorLastName = xmlXPathEval((xmlChar*)"fb2:last-name", xpathCtx);
-            if (xpathObjAuthorLastName->type == XPATH_NODESET) {
-                info->last_name = xmlXPathCastNodeSetToString(xpathObjAuthorLastName->nodesetval);
-            }
-            xmlXPathFreeObject(xpathObjAuthorLastName); 
-        }
-        xmlXPathFreeObject(xpathObjAuthor);
-        /* Recover context */
-        xpathCtx->node = node;
+
+    xmlXPathRegisterNs(xpathCtx, BAD_CAST "fb2", BAD_CAST "http://www.gribuser.ru/xml/fictionbook/2.0");
+
+    xmlNodeSetPtr nodeset;
+    xmlXPathObjectPtr result;
+    result = getnodeset (doc, xpathCtx, (const xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info/fb2:book-title");
+    if (result)
+    {
+        nodeset = result->nodesetval;
+        info->title = xmlNodeListGetString(doc, nodeset->nodeTab[0]->xmlChildrenNode, 1);
+#ifdef DEBUG
+        fprintf(stderr, "title: %s\n", info->title);
+#endif // DEBUG
+        xmlXPathFreeObject (result);
     }
-    /* Cleanup of XPath data */
-    xmlXPathFreeObject(xpathObj);
-    xmlXPathFreeContext(xpathCtx); 
-    return (FB2_RESULT_OK);
+    result = getnodeset (doc, xpathCtx, (const xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info/fb2:author");
+    if (result)
+    {
+        nodeset = result->nodesetval;
+#ifdef DEBUG
+        fprintf(stderr, "NUM OF AUTHORS: %d\n", nodeset->nodeNr);
+#endif // DEBUG
+        for (int i=0; i < nodeset->nodeNr; ++i)
+        {
+            xmlNodePtr author_node = nodeset->nodeTab[i];
+            xmlNode *cur_node = NULL;
+            for (cur_node = author_node->xmlChildrenNode; cur_node; cur_node = cur_node->next)
+            {
+                if (cur_node->type == XML_ELEMENT_NODE)
+                {
+                    if(xmlStrcmp(cur_node->name, (const xmlChar *)"first-name") == 0)
+                    {
+                        //info->first_name = xmlNodeListGetString(doc, cur_node->xmlChildrenNod, 1);
+                        info->first_name = xmlXPathCastNodeToString(cur_node); // Also xmlNodeGetContent(cur_node)
+                    }
+                    if(xmlStrcmp(cur_node->name, (const xmlChar *)"last-name") == 0)
+                    {
+                        info->last_name = xmlXPathCastNodeToString(cur_node); // Also xmlNodeGetContent(cur_node)
+                    }
+                    if(xmlStrcmp(cur_node->name, (const xmlChar *)"middle-name") == 0)
+                    {
+                        info->middle_name = xmlXPathCastNodeToString(cur_node); // Also xmlNodeGetContent(cur_node)
+                    }
+                }
+            }
+        }
+        xmlXPathFreeObject (result);
+    }
+
+//  result = getnodeset (doc, xpathCtx, (const xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info/fb2:genre");
+//  if (result) {
+//      xmlChar *keyword = NULL;
+//      nodeset = result->nodesetval;
+//      for (int i=0; i < nodeset->nodeNr; i++) {
+//          keyword = xmlNodeListGetString(doc, nodeset->nodeTab[i]->xmlChildrenNode, 1);
+//      #ifdef DEBUG
+//          fprintf(stderr, "Genre: %s\n", keyword);
+//      #endif // DEBUG
+//      xmlFree(keyword);
+//      }
+//      xmlXPathFreeObject (result);
+//  }
+
+    result = getnodeset (doc, xpathCtx, (const xmlChar*)"/fb2:FictionBook/fb2:description/fb2:title-info/fb2:sequence");
+    if (result)
+    {
+        nodeset = result->nodesetval;
+        xmlNodePtr sequence_node = nodeset->nodeTab[0];
+        xmlChar *sequence_name = xmlGetProp(sequence_node, (const xmlChar *)"name");
+        xmlChar *sequence_number = xmlGetProp(sequence_node, (const xmlChar *)"number");
+#ifdef DEBUG
+//        fprintf(stderr, "Sequence: %s-%s\n", sequence_name, sequence_number);
+#endif // DEBUG
+        if(sequence_number)
+            xmlStrPrintf(info->sequence, LEN_SEQUENCE_STR, "%s - %s", sequence_name, sequence_number);
+        else
+            xmlStrPrintf(info->sequence, LEN_SEQUENCE_STR, "%s", sequence_name);
+
+        xmlFree(sequence_name);
+        xmlFree(sequence_number);
+        xmlXPathFreeObject (result);
+    }
+    xmlXPathFreeContext(xpathCtx);
+    return FB2_RESULT_OK;
+}
+
+static void
+clear_FB2Info(FB2Info *info)
+{
+    assert(info);
+    if(info->title != NULL) xmlFree(info->title);
+    if(info->first_name != NULL) xmlFree(info->first_name);
+    if(info->last_name != NULL) xmlFree(info->last_name);
+    if(info->middle_name != NULL) xmlFree(info->middle_name);
 }
