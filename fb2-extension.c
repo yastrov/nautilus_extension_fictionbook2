@@ -600,7 +600,7 @@ OnCharacters(void * ctx,
     int len)
 {
     #ifdef DEBUG
-    fprintf(stderr, "Event: OnCharacters!\n");
+    fprintf(stderr, "Event: %s!\n", __FUNCTION__);
     #endif
     // http://xmlsoft.org/html/libxml-tree.html#xmlParserCtxt
     // http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler
@@ -661,7 +661,7 @@ OnStartElementNs(
     )
 {
     #ifdef DEBUG
-    fprintf (stderr, "Event: OnStartElementNs!\n");
+    fprintf (stderr, "Event: %s!\n", __FUNCTION__);
     #endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     //const xmlChar *cur_tag_name = ((xmlParserCtxtPtr)ctx)->name;
@@ -669,24 +669,24 @@ OnStartElementNs(
 
     FB2Info *info = (FB2Info *)(handler->_private);
     info->my_state = INIT;
-    if (g_strcmp0((const char*)localname, "author") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"author") == 0) {
         info->my_state = AUTHOR_OPENED;
         info->my_author_state = AUTHOR_OPENED;
         return;
     }
-    if (g_strcmp0((const char*)localname, "first-name") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"first-name") == 0) {
         info->my_state = AUTHOR_FIRSTNAME_OPENED;
         return;
     }
-    if (g_strcmp0((const char*)localname, "last-name") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"last-name") == 0) {
         info->my_state = AUTHOR_LASTNAME_OPENED;
         return;
     }
-    if (g_strcmp0((const char*)localname, "book-title") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"book-title") == 0) {
         info->my_state = BOOK_TITLE_OPENED;
         return;
     }
-    if (g_strcmp0((const char*)localname, "sequence") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"sequence") == 0) {
         size_t index = 0;
         for(int indexAttr = 0;
             indexAttr < nb_attributes;
@@ -696,10 +696,10 @@ OnStartElementNs(
             const xmlChar *a_nsURI = attributes[index+2];
             const xmlChar *a_valueBegin = attributes[index+3];
             const xmlChar *a_valueEnd = attributes[index+4];
-            if(g_strcmp0((const char*)a_localname, "name") == 0) {
+            if(xmlStrcmp(a_localname, (const xmlChar *)"name") == 0) {
                 my_strlcpy(info->sequence_name, (const char *)a_valueBegin, (const char *)a_valueEnd, SEQUENCE_NAME_LENGTH);
             }
-            if( g_strcmp0((const char*)a_localname, "number") == 0) {
+            if(xmlStrcmp(a_localname, (const xmlChar *)"number") == 0) {
                 my_strlcpy(info->sequence_num, (const char *)a_valueBegin, (const char *)a_valueEnd, SEQUENCE_NUM_LENGTH);
             }
         }
@@ -716,15 +716,15 @@ OnEndElementNs(
     )
 {
     #ifdef DEBUG
-    fprintf (stderr, "Event: OnEndElementNs!\n");
+    fprintf (stderr, "Event: %s!\n", __FUNCTION__);
     #endif
     xmlSAXHandlerPtr handler = ((xmlParserCtxtPtr)ctx)->sax;
     FB2Info *info = (FB2Info *)(handler->_private);
-    if (g_strcmp0((const char*)localname, "author") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"author") == 0) {
         info->my_state = AUTHOR_END;
         info->my_author_state = AUTHOR_END;
     }
-    if (g_strcmp0((const char*)localname, "title-info") == 0) {
+    if(xmlStrcmp(localname, (const xmlChar *)"title-info") == 0) {
         info->my_state = STOP;
         xmlStopParser(ctx);
     }
